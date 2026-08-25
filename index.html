@@ -4539,6 +4539,85 @@ html {
   }
 }
 
+/* ==============================================================
+   MOBILE POLISH PASS — nav strap, logo, menu, slider cards
+   (presentation only; no structural/content changes)
+   ============================================================== */
+@media (max-width: 768px) {
+  /* --- Fixed nav: kill floating-strap jank on scroll --- */
+  /* Solid opaque bar (no backdrop-filter over scrolling content = no flicker/
+     banding on iOS Safari) + notch/safe-area handling so it never sits under
+     the status bar / Dynamic Island. */
+  .nav {
+    background: #060e1a !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    padding-top: calc(14px + env(safe-area-inset-top, 0px)) !important;
+    padding-bottom: 14px !important;
+    border-bottom: 1px solid rgba(255,255,255,0.08) !important;
+  }
+  .nav .container.nav-inner {
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+
+  /* --- Logo: never wrap, never overflow, stays legible next to the button --- */
+  .nav-logo {
+    font-size: 16px !important;
+    white-space: nowrap;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .nav-logo svg { width: 24px !important; height: 24px !important; flex: 0 0 auto; }
+
+  /* --- Hamburger: was color:#111 (invisible on the dark bar). Make it white
+     and give it a real tap target. --- */
+  .mobile-menu-btn {
+    display: block !important;
+    color: #fff !important;
+    flex: 0 0 auto;
+  }
+  .mobile-menu-btn svg { width: 26px; height: 26px; }
+
+  /* --- Mobile menu overlay: fully opaque so the page never bleeds through --- */
+  .mobile-nav-overlay {
+    background: #060e1a !important;
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .mobile-nav-close {
+    top: calc(16px + env(safe-area-inset-top, 0px)) !important;
+    color: #fff !important;
+  }
+}
+
+@media (max-width: 420px) {
+  /* Extra-small phones: shrink the wordmark a touch so it never crowds the button */
+  .nav-logo { font-size: 15px !important; gap: 8px !important; }
+}
+
+/* --- HOW IT WORKS slider: on touch/native-scroll widths the JS translateX
+   was fighting the container's own overflow scroll, shoving cards off-screen.
+   Neutralise the transform so native scroll-snap swiping is the single source
+   of truth; the dots are wired to drive scrollLeft in JS below. --- */
+@media (max-width: 600px) {
+  .how-v2-track {
+    transform: none !important;
+    transition: none !important;
+  }
+  .how-v2-track-container {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+    scroll-padding-left: 4px;
+  }
+  .how-v2-card {
+    scroll-snap-align: start;
+  }
+  /* keep dots as a usable, tappable indicator */
+  .how-v2-dots { margin-top: 20px; }
+}
+
 </style>
 </head>
 <body>
@@ -6039,15 +6118,46 @@ function toggleCurriculum(btn) {
     dotsContainer.appendChild(dot);
   }
   
+  const container = track.parentElement;
+  // On mobile the container scrolls natively; a translateX transform fights that
+  // and pushes cards off-screen. Detect native-scroll mode and drive scrollLeft
+  // instead, leaving the transform for the desktop arrows/dots.
+  function isNativeScroll() {
+    const ox = getComputedStyle(container).overflowX;
+    return (ox === 'auto' || ox === 'scroll')
+      && container.scrollWidth > container.clientWidth + 4;
+  }
+
+  function setActiveDot(i) {
+    dotsContainer.querySelectorAll('.how-v2-dot').forEach((d, idx) => {
+      d.classList.toggle('active', idx === i);
+    });
+  }
+
   function goToSlide(n) {
     currentSlide = Math.max(0, Math.min(n, totalSlides - 1));
     const cardWidth = cards[0].offsetWidth + 20; // gap
-    track.style.transform = `translateX(-${currentSlide * cardsPerView * cardWidth}px)`;
-    dotsContainer.querySelectorAll('.how-v2-dot').forEach((d, i) => {
-      d.classList.toggle('active', i === currentSlide);
-    });
+    if (isNativeScroll()) {
+      container.scrollTo({ left: currentSlide * cardsPerView * cardWidth, behavior: 'smooth' });
+    } else {
+      track.style.transform = `translateX(-${currentSlide * cardsPerView * cardWidth}px)`;
+    }
+    setActiveDot(currentSlide);
   }
-  
+
+  // Keep the active dot in sync when the user swipes the native scroller.
+  let scrollRaf = null;
+  container.addEventListener('scroll', () => {
+    if (!isNativeScroll()) return;
+    if (scrollRaf) cancelAnimationFrame(scrollRaf);
+    scrollRaf = requestAnimationFrame(() => {
+      const cardWidth = cards[0].offsetWidth + 20;
+      const i = Math.round(container.scrollLeft / (cardsPerView * cardWidth));
+      currentSlide = Math.max(0, Math.min(i, totalSlides - 1));
+      setActiveDot(currentSlide);
+    });
+  }, { passive: true });
+
   const prevBtn = document.querySelector('.how-v2-prev');
   const nextBtn = document.querySelector('.how-v2-next');
   if (prevBtn) prevBtn.addEventListener('click', () => goToSlide(currentSlide - 1));
